@@ -121,6 +121,8 @@ static const struct Mapping Fields[] = {
   { "indicator", MT_COLOR_INDICATOR },
   { "markers", MT_COLOR_MARKERS },
   { "message", MT_COLOR_MESSAGE },
+  { "menu", MT_COLOR_MENU },
+  { "menu_options", MT_COLOR_MENU_OPTIONS },
   { "normal", MT_COLOR_NORMAL },
   { "progress", MT_COLOR_PROGRESS },
   { "prompt", MT_COLOR_PROMPT },

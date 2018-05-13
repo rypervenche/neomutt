@@ -563,7 +563,59 @@ static void menu_redraw_prompt(struct Menu *menu)
   if (ErrorBufMessage)
     mutt_clear_error();
 
-  mutt_window_mvaddstr(menu->messagewin, 0, 0, menu->prompt);
+  if (ColorDefs[MT_COLOR_MENU] == ColorDefs[MT_COLOR_MENU_OPTIONS])
+  {
+    /* Don't remove parenthesis if we don't have different colors */
+    SETCOLOR(MT_COLOR_MENU);
+    mutt_window_mvaddstr(menu->messagewin, 0, 0, menu->prompt);
+  }
+  else
+  {
+    char *start = NULL;
+    char *cur = NULL;
+    char *tmp = NULL;
+    int pos = 0;
+
+    start = menu->prompt;
+    cur = strchr(menu->prompt, '(');
+    while (cur != NULL)
+    {
+      if ((mutt_str_strlen(cur) >= 3) && (cur[0] == '(') && (cur[2] == ')'))
+      {
+        for (int k = 0; k < mutt_str_strlen(menu->keys); k++)
+        {
+          if (cur[1] == menu->keys[k])
+          {
+            if (start != cur)
+            {
+              SETCOLOR(MT_COLOR_MENU);
+              tmp = mutt_str_substr_dup(start, cur - 1);
+              mutt_window_mvaddstr(menu->messagewin, 0, pos, tmp);
+              pos += mutt_str_strlen(tmp) + 1;
+              FREE(&tmp);
+            }
+
+            SETCOLOR(MT_COLOR_MENU_OPTIONS);
+            tmp = mutt_str_substr_dup(cur + 1, cur + 2);
+            mutt_window_mvaddstr(menu->messagewin, 0, pos, tmp);
+            FREE(&tmp);
+            pos += 1;
+
+            cur += 2;
+            start = cur + 1;
+            break;
+          }
+        }
+      }
+      cur = strchr(cur + 1, '(');
+    }
+    if (start != NULL)
+    {
+      SETCOLOR(MT_COLOR_MENU);
+      mutt_window_mvaddstr(menu->messagewin, 0, pos, start);
+    }
+  }
+
   mutt_window_clrtoeol(menu->messagewin);
 }
 
