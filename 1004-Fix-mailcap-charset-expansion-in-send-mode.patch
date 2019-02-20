@@ -1,0 +1,29 @@
+From be7903720988005d6b9e057b2985a0d5f677cf13 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Fri, 8 Mar 2019 18:06:52 +0800
+Subject: [PATCH 4/9] Fix mailcap %{charset} expansion in send mode.
+
+Use the current charset of the file for the parameter, since the file
+hasn't been converted yet.
+---
+ rfc1524.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/rfc1524.c b/rfc1524.c
+index 534fda7b..2a9e3afd 100644
+--- a/rfc1524.c
++++ b/rfc1524.c
+@@ -102,7 +102,12 @@ int rfc1524_expand_command (BODY *a, const char *filename, const char *_type,
+ 	  param[z++] = command[x++];
+ 	param[z] = '\0';
+ 
+-	_pvalue = mutt_get_parameter (param, a->parameter);
++        /* In send mode, use the current charset, since the message hasn't
++         * been converted yet. */
++        if ((ascii_strcasecmp (param, "charset") == 0) && a->charset)
++          _pvalue = a->charset;
++        else
++          _pvalue = mutt_get_parameter (param, a->parameter);
+ 	strfcpy (pvalue, NONULL(_pvalue), sizeof (pvalue));
+ 	if (option (OPTMAILCAPSANITIZE))
+ 	  mutt_sanitize_filename (pvalue, 0);

@@ -1,0 +1,110 @@
+From d8d9c5051dd0e78190f19aa04293986d2d5f2347 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sun, 10 Mar 2019 13:35:26 +0800
+Subject: [PATCH] Move mutt_rx_sanitize_string() to muttlib.c
+
+So it can be converted to use BUFFER.
+---
+ lib.c     | 24 ------------------------
+ lib.h     |  1 -
+ muttlib.c | 24 ++++++++++++++++++++++++
+ protos.h  |  1 +
+ 4 files changed, 25 insertions(+), 25 deletions(-)
+
+diff --git a/lib.c b/lib.c
+index 1d294ed2..00c322db 100644
+--- a/lib.c
++++ b/lib.c
+@@ -742,30 +742,6 @@ void mutt_sanitize_filename (char *f, short slash)
+   }
+ }
+ 
+-/* these characters must be escaped in regular expressions */
+-
+-static const char rx_special_chars[] = "^.[$()|*+?{\\";
+-
+-int mutt_rx_sanitize_string (char *dest, size_t destlen, const char *src)
+-{
+-  while (*src && --destlen > 2)
+-  {
+-    if (strchr (rx_special_chars, *src))
+-    {
+-      *dest++ = '\\';
+-      destlen--;
+-    }
+-    *dest++ = *src++;
+-  }
+-
+-  *dest = '\0';
+-
+-  if (*src)
+-    return -1;
+-  else
+-    return 0;
+-}
+-
+ /* Read a line from ``fp'' into the dynamically allocated ``s'',
+  * increasing ``s'' if necessary. The ending "\n" or "\r\n" is removed.
+  * If a line ends with "\", this char and the linefeed is removed,
+diff --git a/lib.h b/lib.h
+index 5af75ac8..f6b4096f 100644
+--- a/lib.h
++++ b/lib.h
+@@ -201,7 +201,6 @@ const char *mutt_basename (const char *);
+ int compare_stat (struct stat *, struct stat *);
+ int mutt_copy_stream (FILE *, FILE *);
+ int mutt_copy_bytes (FILE *, FILE *, size_t);
+-int mutt_rx_sanitize_string (char *, size_t, const char *);
+ int mutt_strcasecmp (const char *, const char *);
+ int mutt_strcmp (const char *, const char *);
+ int mutt_strncasecmp (const char *, const char *, size_t);
+diff --git a/muttlib.c b/muttlib.c
+index f458e7ac..00560ed9 100644
+--- a/muttlib.c
++++ b/muttlib.c
+@@ -862,6 +862,30 @@ void _mutt_mktemp (char *s, size_t slen, const char *prefix, const char *suffix,
+     dprint (1, (debugfile, "%s:%d: ERROR: unlink(\"%s\"): %s (errno %d)\n", src, line, s, strerror (errno), errno));
+ }
+ 
++/* these characters must be escaped in regular expressions */
++
++static const char rx_special_chars[] = "^.[$()|*+?{\\";
++
++int mutt_rx_sanitize_string (char *dest, size_t destlen, const char *src)
++{
++  while (*src && --destlen > 2)
++  {
++    if (strchr (rx_special_chars, *src))
++    {
++      *dest++ = '\\';
++      destlen--;
++    }
++    *dest++ = *src++;
++  }
++
++  *dest = '\0';
++
++  if (*src)
++    return -1;
++  else
++    return 0;
++}
++
+ void mutt_free_alias (ALIAS **p)
+ {
+   ALIAS *t;
+diff --git a/protos.h b/protos.h
+index 68a617e4..c0a04a4d 100644
+--- a/protos.h
++++ b/protos.h
+@@ -253,6 +253,7 @@ void mutt_print_patchlist (void);
+ void mutt_query_exit (void);
+ void mutt_query_menu (char *, size_t);
+ void mutt_safe_path (char *s, size_t l, ADDRESS *a);
++int mutt_rx_sanitize_string (char *dest, size_t destlen, const char *src);
+ void mutt_save_path (char *s, size_t l, ADDRESS *a);
+ void mutt_score_message (CONTEXT *, HEADER *, int);
+ void mutt_select_fcc (char *, size_t, HEADER *);
+-- 
+2.20.1
+

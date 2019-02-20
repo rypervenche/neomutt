@@ -1,0 +1,58 @@
+From 128baa52e5ad912e3127926937934e1cb8d31c5f Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sat, 23 Feb 2019 12:12:36 -0800
+Subject: [PATCH 1/9] Add additional search names for docbook texi conversion
+ program.
+
+On Arch, it is called docbook2text
+---
+ configure.ac    | 10 ++++++----
+ doc/Makefile.am |  4 ++--
+ 2 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 892de59f..b07fade0 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1562,14 +1562,16 @@ then
+ fi
+ AC_SUBST(DSLROOT)
+ 
+-AC_PATH_PROG([db2x], [docbook2x-texi], [none])
+-if test "$db2x" != "none"; then
+-   AC_PATH_PROG([makeinfo], [makeinfo], [none])
+-   if test "$makeinfo" != "none"; then
++AC_PATH_PROGS([DB2XTEXI], [docbook2x-texi docbook2texi], [none])
++if test "$DB2XTEXI" != "none"; then
++   AC_PATH_PROG([MAKEINFO], [makeinfo], [none])
++   if test "$MAKEINFO" != "none"; then
+       do_build_info=yes
+    fi
+ fi
+ AM_CONDITIONAL(BUILD_INFO, test x$do_build_info = xyes)
++AC_SUBST(DB2XTEXI)
++AC_SUBST(MAKEINFO)
+ 
+ AC_ARG_ENABLE(doc, AS_HELP_STRING([--disable-doc],[Do not build the documentation]),
+ [       if test x$enableval = xno ; then
+diff --git a/doc/Makefile.am b/doc/Makefile.am
+index 5d180c93..da07c66f 100644
+--- a/doc/Makefile.am
++++ b/doc/Makefile.am
+@@ -161,14 +161,14 @@ manual.tex: stamp-doc-xml
+ 	fi
+ 
+ mutt.texi: stamp-doc-xml
+-	docbook2x-texi --encoding=utf-8 \
++	$(DB2XTEXI) --encoding=utf-8 \
+ 	    --string-param output-file=mutt \
+ 	    --string-param 'directory-category=Email-software' \
+ 	    --string-param 'directory-description=Text based mail reader' \
+ 	    manual.xml
+ 
+ mutt.info: mutt.texi
+-	makeinfo --no-split -o mutt.info mutt.texi
++	$(MAKEINFO) --no-split -o mutt.info mutt.texi
+ 
+ validate: stamp-doc-xml
+ 	xmllint --noout --noblanks --postvalid manual.xml

@@ -1,0 +1,41 @@
+From 6fe1f31e931c5ed4fe0879ab7d19895225b6fcda Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sat, 9 Mar 2019 15:03:00 +0800
+Subject: [PATCH 6/9] Expand a couple of the comments about charset.
+
+Make it clearer what BODY->charset is used for, and why we are
+checking for !noconv during mailcap charset parameter expansion.
+---
+ mutt.h    | 4 +++-
+ rfc1524.c | 3 ++-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/mutt.h b/mutt.h
+index e507ea5e..0ce50fab 100644
+--- a/mutt.h
++++ b/mutt.h
+@@ -732,7 +732,9 @@ typedef struct body
+ 				 * If NULL, filename is used
+ 				 * instead.
+ 				 */
+-  char *charset;                /* charset of attached file */
++  char *charset;                /* send mode: charset of attached file as stored
++                                 * on disk.  the charset used in the generated
++                                 * message is stored in parameter. */
+   CONTENT *content;             /* structure used to store detailed info about
+ 				 * the content of the attachment.  this is used
+ 				 * to determine what content-transfer-encoding
+diff --git a/rfc1524.c b/rfc1524.c
+index e7755035..165e2c06 100644
+--- a/rfc1524.c
++++ b/rfc1524.c
+@@ -103,7 +103,8 @@ int rfc1524_expand_command (BODY *a, const char *filename, const char *_type,
+ 	param[z] = '\0';
+ 
+         /* In send mode, use the current charset, since the message hasn't
+-         * been converted yet. */
++         * been converted yet.   If noconv is set, then we assume the
++         * charset parameter has the correct value instead. */
+         if ((ascii_strcasecmp (param, "charset") == 0) && a->charset && !a->noconv)
+           _pvalue = a->charset;
+         else

@@ -1,0 +1,149 @@
+From 5be5ad46119377f425181d3079c5700ef4bd33e0 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sun, 10 Mar 2019 09:58:07 +0800
+Subject: [PATCH 8/9] Minor buffer handling code cleanup.
+
+Use mutt_buffer_len() and mutt_buffer_clear() to make the code a bit
+clearer.  There are still places in the code that manipulate the
+buffers directly (pattern.c, for example), but that doesn't mean we
+shouldn't abstract the buffer where we can.
+
+Add comments in a couple places where unusual buffer manipulation is
+occurring.
+---
+ base64.c       | 1 +
+ imap/command.c | 4 ++--
+ imap/imap.c    | 6 +++---
+ imap/message.c | 2 +-
+ init.c         | 7 ++-----
+ muttlib.c      | 2 ++
+ parse.c        | 3 +--
+ 7 files changed, 12 insertions(+), 13 deletions(-)
+
+diff --git a/base64.c b/base64.c
+index d942e546..67e13c30 100644
+--- a/base64.c
++++ b/base64.c
+@@ -93,6 +93,7 @@ int mutt_buffer_from_base64 (BUFFER *out, const char *in)
+ 
+   mutt_buffer_increase_size (out, mutt_strlen (in));
+   olen = mutt_from_base64 (out->data, in, out->dsize);
++  /* mutt_from_base64 returns raw bytes, so don't terminate the buffer either */
+   if (olen > 0)
+     out->dptr = out->data + olen;
+   else
+diff --git a/imap/command.c b/imap/command.c
+index 175ae5c8..1494088c 100644
+--- a/imap/command.c
++++ b/imap/command.c
+@@ -448,12 +448,12 @@ static int cmd_start (IMAP_DATA* idata, const char* cmdstr, int flags)
+   if (flags & IMAP_CMD_QUEUE)
+     return 0;
+ 
+-  if (idata->cmdbuf->dptr == idata->cmdbuf->data)
++  if (mutt_buffer_len (idata->cmdbuf) == 0)
+     return IMAP_CMD_BAD;
+ 
+   rc = mutt_socket_write_d (idata->conn, idata->cmdbuf->data, -1,
+                             flags & IMAP_CMD_PASS ? IMAP_LOG_PASS : IMAP_LOG_CMD);
+-  idata->cmdbuf->dptr = idata->cmdbuf->data;
++  mutt_buffer_clear (idata->cmdbuf);
+ 
+   /* unidle when command queue is flushed */
+   if (idata->state == IMAP_IDLE)
+diff --git a/imap/imap.c b/imap/imap.c
+index f9ce4957..4764698a 100644
+--- a/imap/imap.c
++++ b/imap/imap.c
+@@ -973,7 +973,7 @@ static int imap_make_msg_set (IMAP_DATA* idata, BUFFER* buf, int flag,
+   hdrs = idata->ctx->hdrs;
+ 
+   for (n = *pos;
+-       n < idata->ctx->msgcount && buf->dptr - buf->data < IMAP_MAX_CMDLEN;
++       (n < idata->ctx->msgcount) && (mutt_buffer_len (buf) < IMAP_MAX_CMDLEN);
+        n++)
+   {
+     match = 0;
+@@ -1086,7 +1086,7 @@ int imap_exec_msgset (IMAP_DATA* idata, const char* pre, const char* post,
+ 
+   do
+   {
+-    cmd->dptr = cmd->data;
++    mutt_buffer_clear (cmd);
+     mutt_buffer_add_printf (cmd, "%s ", pre);
+     rc = imap_make_msg_set (idata, cmd, flag, changed, invert, &pos);
+     if (rc > 0)
+@@ -1153,7 +1153,7 @@ int imap_sync_message_for_copy (IMAP_DATA *idata, HEADER *hdr, BUFFER *cmd,
+   }
+ 
+   snprintf (uid, sizeof (uid), "%u", HEADER_DATA(hdr)->uid);
+-  cmd->dptr = cmd->data;
++  mutt_buffer_clear (cmd);
+   mutt_buffer_addstr (cmd, "UID STORE ");
+   mutt_buffer_addstr (cmd, uid);
+ 
+diff --git a/imap/message.c b/imap/message.c
+index 95b8366a..47904f58 100644
+--- a/imap/message.c
++++ b/imap/message.c
+@@ -185,7 +185,7 @@ static void imap_fetch_msn_seqset (BUFFER *b, IMAP_DATA *idata, unsigned int msn
+   /* Too big.  Just query the whole range then. */
+   if (chunks == 150 || mutt_strlen (b->data) > 500)
+   {
+-    b->dptr = b->data;
++    mutt_buffer_clear (b);
+     mutt_buffer_add_printf (b, "%u:%u", msn_begin, msn_end);
+   }
+ }
+diff --git a/init.c b/init.c
+index fe75c2db..387fde15 100644
+--- a/init.c
++++ b/init.c
+@@ -140,8 +140,7 @@ int mutt_extract_token (BUFFER *dest, BUFFER *tok, int flags)
+   char		qc = 0; /* quote char */
+   char		*pc;
+ 
+-  /* reset the destination pointer to the beginning of the buffer */
+-  dest->dptr = dest->data;
++  mutt_buffer_clear (dest);
+ 
+   SKIPWS (tok->dptr);
+   while ((ch = *tok->dptr))
+@@ -3406,9 +3405,7 @@ void mutt_init (int skip_sys_rc, LIST *commands)
+   BUFFER err;
+ 
+   mutt_buffer_init (&err);
+-  err.dsize = STRING;
+-  err.data = safe_malloc(err.dsize);
+-  err.dptr = err.data;
++  mutt_buffer_increase_size (&err, STRING);
+ 
+   Groups = hash_create (1031, 0);
+   /* reverse alias keys need to be strdup'ed because of idna conversions */
+diff --git a/muttlib.c b/muttlib.c
+index 191c1df7..f458e7ac 100644
+--- a/muttlib.c
++++ b/muttlib.c
+@@ -1275,6 +1275,8 @@ void mutt_FormatString (char *dest,		/* output buffer */
+ 
+       /* prepare BUFFERs */
+       srcbuf = mutt_buffer_from (srccopy);
++      /* note: we are resetting dptr and *reading* from the buffer, so we don't
++       * want to use mutt_buffer_clear(). */
+       srcbuf->dptr = srcbuf->data;
+       word = mutt_buffer_new ();
+       command = mutt_buffer_new ();
+diff --git a/parse.c b/parse.c
+index c243062c..47e0f084 100644
+--- a/parse.c
++++ b/parse.c
+@@ -1447,8 +1447,7 @@ ENVELOPE *mutt_read_rfc822_header (FILE *f, HEADER *hdr, short user_hdrs,
+ 	  /* else overwrite */
+ 	  else
+ 	  {
+-	    e->spam->dptr = e->spam->data;
+-	    *e->spam->dptr = '\0';
++            mutt_buffer_clear (e->spam);
+ 	    mutt_buffer_addstr(e->spam, buf);
+ 	  }
+ 	}

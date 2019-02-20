@@ -1,0 +1,419 @@
+From af3859f56ba6eb19442d138ea2c725d54ca7cb92 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Sun, 10 Mar 2019 13:27:11 +0800
+Subject: [PATCH] Add mutt_buffer_expand_path().
+
+TODO: '@' expansion using mutt_default_save() is still using a fixed size
+string parameter.
+
+Convert imap_expand_path() and mutt_rx_sanitize_string() to use
+BUFFERS instead.
+
+Add url_ciss_tobuffer().
+---
+ imap/imap.h |   2 +-
+ imap/util.c |  11 +++---
+ muttlib.c   | 101 ++++++++++++++++++++++++++++++----------------------
+ protos.h    |   3 +-
+ url.c       |  41 ++++++++++++---------
+ url.h       |   1 +
+ 6 files changed, 92 insertions(+), 67 deletions(-)
+
+diff --git a/imap/imap.h b/imap/imap.h
+index e1878d18..c6eaf648 100644
+--- a/imap/imap.h
++++ b/imap/imap.h
+@@ -62,7 +62,7 @@ int imap_copy_messages (CONTEXT* ctx, HEADER* h, char* dest, int delete);
+ void imap_logout_all (void);
+ 
+ /* util.c */
+-int imap_expand_path (char* path, size_t len);
++int imap_expand_path (BUFFER* path);
+ int imap_parse_path (const char* path, IMAP_MBOX* mx);
+ void imap_pretty_mailbox (char* path, size_t pathlen);
+ 
+diff --git a/imap/util.c b/imap/util.c
+index fe0ed09d..01b57d08 100644
+--- a/imap/util.c
++++ b/imap/util.c
+@@ -45,12 +45,11 @@
+ 
+ /* imap_expand_path: IMAP implementation of mutt_expand_path. Rewrite
+  *   an IMAP path in canonical and absolute form.
+- * Inputs: a buffer containing an IMAP path, and the number of bytes in
+- *   that buffer.
++ * Inputs: a buffer containing an IMAP path.
+  * Outputs: The buffer is rewritten in place with the canonical IMAP path.
+- * Returns 0 on success, or -1 if imap_parse_path chokes or url_ciss_tostring
++ * Returns 0 on success, or -1 if imap_parse_path chokes or url_ciss_tobuffer
+  *   fails, which it might if there isn't enough room in the buffer. */
+-int imap_expand_path (char* path, size_t len)
++int imap_expand_path (BUFFER* path)
+ {
+   IMAP_MBOX mx;
+   IMAP_DATA* idata;
+@@ -58,7 +57,7 @@ int imap_expand_path (char* path, size_t len)
+   char fixedpath[LONG_STRING];
+   int rc;
+ 
+-  if (imap_parse_path (path, &mx) < 0)
++  if (imap_parse_path (mutt_b2s (path), &mx) < 0)
+     return -1;
+ 
+   idata = imap_conn_find (&mx.account, MUTT_IMAP_CONN_NONEW);
+@@ -66,7 +65,7 @@ int imap_expand_path (char* path, size_t len)
+   imap_fix_path (idata, mx.mbox, fixedpath, sizeof (fixedpath));
+   url.path = fixedpath;
+ 
+-  rc = url_ciss_tostring (&url, path, len, U_DECODE_PASSWD);
++  rc = url_ciss_tobuffer (&url, path, U_DECODE_PASSWD);
+   FREE (&mx.mbox);
+ 
+   return rc;
+diff --git a/muttlib.c b/muttlib.c
+index 9ae4af93..ee549788 100644
+--- a/muttlib.c
++++ b/muttlib.c
+@@ -435,18 +435,34 @@ char *mutt_expand_path (char *s, size_t slen)
+ 
+ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ {
+-  char p[_POSIX_PATH_MAX] = "";
+-  char q[_POSIX_PATH_MAX] = "";
+-  char tmp[_POSIX_PATH_MAX];
+-  char *t;
++  BUFFER *s_buf;
++
++  s_buf = mutt_buffer_pool_get ();
+ 
+-  char *tail = "";
++  mutt_buffer_addstr (s_buf, s);
++  mutt_buffer_expand_path (s_buf, rx);
++  strfcpy (s, mutt_b2s (s_buf), slen);
++
++  mutt_buffer_pool_release (&s_buf);
++
++  return s;
++}
+ 
++void mutt_buffer_expand_path (BUFFER *src, int rx)
++{
++  BUFFER *p, *q, *tmp;
++  const char *s, *tail = "";
++  char *t;
+   int recurse = 0;
+ 
++  p = mutt_buffer_pool_get ();
++  q = mutt_buffer_pool_get ();
++  tmp = mutt_buffer_pool_get ();
++
+   do
+   {
+     recurse = 0;
++    s = src->data;
+ 
+     switch (*s)
+     {
+@@ -454,7 +470,7 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+       {
+ 	if (*(s + 1) == '/' || *(s + 1) == 0)
+ 	{
+-	  strfcpy (p, NONULL(Homedir), sizeof (p));
++	  mutt_buffer_strcpy (p, NONULL(Homedir));
+ 	  tail = s + 1;
+ 	}
+ 	else
+@@ -465,7 +481,7 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ 
+ 	  if ((pw = getpwnam (s + 1)))
+ 	  {
+-	    strfcpy (p, pw->pw_dir, sizeof (p));
++	    mutt_buffer_strcpy (p, pw->pw_dir);
+ 	    if (t)
+ 	    {
+ 	      *t = '/';
+@@ -479,7 +495,7 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ 	    /* user not found! */
+ 	    if (t)
+ 	      *t = '/';
+-	    *p = '\0';
++            mutt_buffer_clear (p);
+ 	    tail = s;
+ 	  }
+ 	}
+@@ -494,13 +510,13 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ 	if (mx_is_imap (NONULL (Maildir)) &&
+ 	    (Maildir[strlen (Maildir) - 1] == '}' ||
+ 	     Maildir[strlen (Maildir) - 1] == '/'))
+-	  strfcpy (p, NONULL (Maildir), sizeof (p));
++	  mutt_buffer_strcpy (p, NONULL (Maildir));
+ 	else
+ #endif
+           if (Maildir && *Maildir && Maildir[strlen (Maildir) - 1] == '/')
+-            strfcpy (p, NONULL (Maildir), sizeof (p));
++            mutt_buffer_strcpy (p, NONULL (Maildir));
+           else
+-            snprintf (p, sizeof (p), "%s/", NONULL (Maildir));
++            mutt_buffer_printf (p, "%s/", NONULL (Maildir));
+ 
+ 	tail = s + 1;
+       }
+@@ -518,11 +534,16 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ 	  h = mutt_new_header();
+ 	  h->env = mutt_new_envelope();
+ 	  h->env->from = h->env->to = alias;
+-	  mutt_default_save (p, sizeof (p), h);
++
++          /* TODO: fix mutt_default_save() to use BUFFER */
++          mutt_buffer_increase_size (p, _POSIX_PATH_MAX);
++	  mutt_default_save (p->data, p->dsize, h);
++          mutt_buffer_fix_dptr (p);
++
+ 	  h->env->from = h->env->to = NULL;
+ 	  mutt_free_header (&h);
+ 	  /* Avoid infinite recursion if the resulting folder starts with '@' */
+-	  if (*p != '@')
++	  if (*(p->data) != '@')
+ 	    recurse = 1;
+ 
+ 	  tail = "";
+@@ -532,14 +553,14 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ 
+       case '>':
+       {
+-	strfcpy (p, NONULL(Inbox), sizeof (p));
++	mutt_buffer_strcpy (p, NONULL(Inbox));
+ 	tail = s + 1;
+       }
+       break;
+ 
+       case '<':
+       {
+-	strfcpy (p, NONULL(Outbox), sizeof (p));
++	mutt_buffer_strcpy (p, NONULL(Outbox));
+ 	tail = s + 1;
+       }
+       break;
+@@ -548,12 +569,12 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+       {
+ 	if (*(s+1) == '!')
+ 	{
+-	  strfcpy (p, NONULL(LastFolder), sizeof (p));
++	  mutt_buffer_strcpy (p, NONULL(LastFolder));
+ 	  tail = s + 2;
+ 	}
+ 	else
+ 	{
+-	  strfcpy (p, NONULL(Spoolfile), sizeof (p));
++	  mutt_buffer_strcpy (p, NONULL(Spoolfile));
+ 	  tail = s + 1;
+ 	}
+       }
+@@ -561,45 +582,47 @@ char *_mutt_expand_path (char *s, size_t slen, int rx)
+ 
+       case '-':
+       {
+-	strfcpy (p, NONULL(LastFolder), sizeof (p));
++	mutt_buffer_strcpy (p, NONULL(LastFolder));
+ 	tail = s + 1;
+       }
+       break;
+ 
+       case '^':
+       {
+-	strfcpy (p, NONULL(CurrentFolder), sizeof (p));
++	mutt_buffer_strcpy (p, NONULL(CurrentFolder));
+ 	tail = s + 1;
+       }
+       break;
+ 
+       default:
+       {
+-	*p = '\0';
++	mutt_buffer_clear (p);
+ 	tail = s;
+       }
+     }
+ 
+-    if (rx && *p && !recurse)
++    if (rx && *(p->data) && !recurse)
+     {
+-      mutt_rx_sanitize_string (q, sizeof (q), p);
+-      snprintf (tmp, sizeof (tmp), "%s%s", q, tail);
++      mutt_rx_sanitize_string (q, mutt_b2s (p));
++      mutt_buffer_printf (tmp, "%s%s", mutt_b2s (q), tail);
+     }
+     else
+-      snprintf (tmp, sizeof (tmp), "%s%s", p, tail);
++      mutt_buffer_printf (tmp, "%s%s", mutt_b2s (p), tail);
+ 
+-    strfcpy (s, tmp, slen);
++    mutt_buffer_strcpy (src, mutt_b2s (tmp));
+   }
+   while (recurse);
+ 
++  mutt_buffer_pool_release (&p);
++  mutt_buffer_pool_release (&q);
++  mutt_buffer_pool_release (&tmp);
++
+ #ifdef USE_IMAP
+   /* Rewrite IMAP path in canonical form - aids in string comparisons of
+    * folders. May possibly fail, in which case s should be the same. */
+-  if (mx_is_imap (s))
+-    imap_expand_path (s, slen);
++  if (mx_is_imap (mutt_b2s (src)))
++    imap_expand_path (src);
+ #endif
+-
+-  return (s);
+ }
+ 
+ /* Extract the real name from /etc/passwd's GECOS field.
+@@ -866,24 +889,16 @@ void _mutt_mktemp (char *s, size_t slen, const char *prefix, const char *suffix,
+ 
+ static const char rx_special_chars[] = "^.[$()|*+?{\\";
+ 
+-int mutt_rx_sanitize_string (char *dest, size_t destlen, const char *src)
++int mutt_rx_sanitize_string (BUFFER *dest, const char *src)
+ {
+-  while (*src && --destlen > 2)
++  mutt_buffer_clear (dest);
++  while (*src)
+   {
+     if (strchr (rx_special_chars, *src))
+-    {
+-      *dest++ = '\\';
+-      destlen--;
+-    }
+-    *dest++ = *src++;
++      mutt_buffer_addch (dest, '\\');
++    mutt_buffer_addch (dest, *src++);
+   }
+-
+-  *dest = '\0';
+-
+-  if (*src)
+-    return -1;
+-  else
+-    return 0;
++  return 0;
+ }
+ 
+ void mutt_free_alias (ALIAS **p)
+diff --git a/protos.h b/protos.h
+index c0a04a4d..0ea70c80 100644
+--- a/protos.h
++++ b/protos.h
+@@ -138,6 +138,7 @@ const char *mutt_attach_fmt (
+ 
+ char *mutt_charset_hook (const char *);
+ char *mutt_iconv_hook (const char *);
++void mutt_buffer_expand_path (BUFFER *, int);
+ char *mutt_expand_path (char *, size_t);
+ char *_mutt_expand_path (char *, size_t, int);
+ char *mutt_find_hook (int, const char *);
+@@ -253,7 +254,7 @@ void mutt_print_patchlist (void);
+ void mutt_query_exit (void);
+ void mutt_query_menu (char *, size_t);
+ void mutt_safe_path (char *s, size_t l, ADDRESS *a);
+-int mutt_rx_sanitize_string (char *dest, size_t destlen, const char *src);
++int mutt_rx_sanitize_string (BUFFER *dest, const char *src);
+ void mutt_save_path (char *s, size_t l, ADDRESS *a);
+ void mutt_score_message (CONTEXT *, HEADER *, int);
+ void mutt_select_fcc (char *, size_t, HEADER *);
+diff --git a/url.c b/url.c
+index 725d4885..623dd05c 100644
+--- a/url.c
++++ b/url.c
+@@ -214,21 +214,34 @@ static void url_pct_encode (char *dst, size_t l, const char *src)
+   *dst = 0;
+ }
+ 
+-/* url_ciss_tostring: output the URL string for a given CISS object. */
+ int url_ciss_tostring (ciss_url_t* ciss, char* dest, size_t len, int flags)
+ {
+-  long l;
++  BUFFER *dest_buf;
++  int retval;
+ 
++  dest_buf = mutt_buffer_pool_get ();
++
++  retval = url_ciss_tobuffer (ciss, dest_buf, flags);
++  if (!retval)
++    strfcpy (dest, mutt_b2s (dest_buf), len);
++
++  mutt_buffer_pool_release (&dest_buf);
++
++  return retval;
++}
++
++/* url_ciss_tobuffer: output the URL string for a given CISS object. */
++int url_ciss_tobuffer (ciss_url_t* ciss, BUFFER* dest, int flags)
++{
+   if (ciss->scheme == U_UNKNOWN)
+     return -1;
+ 
+-  snprintf (dest, len, "%s:", mutt_getnamebyvalue (ciss->scheme, UrlMap));
++  mutt_buffer_printf (dest, "%s:", mutt_getnamebyvalue (ciss->scheme, UrlMap));
+ 
+   if (ciss->host)
+   {
+     if (!(flags & U_PATH))
+-      safe_strcat (dest, len, "//");
+-    len -= (l = strlen (dest)); dest += l;
++      mutt_buffer_addstr (dest, "//");
+ 
+     if (ciss->user)
+     {
+@@ -239,29 +252,25 @@ int url_ciss_tostring (ciss_url_t* ciss, char* dest, size_t len, int flags)
+       {
+ 	char p[STRING];
+ 	url_pct_encode (p, sizeof (p), ciss->pass);
+-	snprintf (dest, len, "%s:%s@", u, p);
++	mutt_buffer_add_printf (dest, "%s:%s@", u, p);
+       }
+       else
+-	snprintf (dest, len, "%s@", u);
+-
+-      len -= (l = strlen (dest)); dest += l;
++	mutt_buffer_add_printf (dest, "%s@", u);
+     }
+ 
+     if (strchr (ciss->host, ':'))
+-      snprintf (dest, len, "[%s]", ciss->host);
++      mutt_buffer_add_printf (dest, "[%s]", ciss->host);
+     else
+-      snprintf (dest, len, "%s", ciss->host);
+-
+-    len -= (l = strlen (dest)); dest += l;
++      mutt_buffer_add_printf (dest, "%s", ciss->host);
+ 
+     if (ciss->port)
+-      snprintf (dest, len, ":%hu/", ciss->port);
++      mutt_buffer_add_printf (dest, ":%hu/", ciss->port);
+     else
+-      snprintf (dest, len, "/");
++      mutt_buffer_addstr (dest, "/");
+   }
+ 
+   if (ciss->path)
+-    safe_strcat (dest, len, ciss->path);
++    mutt_buffer_addstr (dest, ciss->path);
+ 
+   return 0;
+ }
+diff --git a/url.h b/url.h
+index fc6a3189..2b1f94b6 100644
+--- a/url.h
++++ b/url.h
+@@ -33,6 +33,7 @@ url_scheme_t url_check_scheme (const char *s);
+ int url_parse_file (char *d, const char *src, size_t dl);
+ int url_parse_ciss (ciss_url_t *ciss, char *src);
+ int url_ciss_tostring (ciss_url_t* ciss, char* dest, size_t len, int flags);
++int url_ciss_tobuffer (ciss_url_t* ciss, BUFFER* dest, int flags);
+ int url_parse_mailto (ENVELOPE *e, char **body, const char *src);
+ 
+ #endif
+-- 
+2.20.1
+

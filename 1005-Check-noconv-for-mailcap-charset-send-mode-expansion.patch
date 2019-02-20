@@ -1,0 +1,25 @@
+From 09d4f38416c9d29c4fb1f25e50933add54886c35 Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Fri, 8 Mar 2019 19:48:41 +0800
+Subject: [PATCH 5/9] Check noconv for mailcap %{charset} send mode expansion.
+
+Improve the previous commit by checking to make sure a->noconv also
+isn't set.  If noconv is set, we ignore any value a->charset might
+have picked up during previous encoding checks.
+---
+ rfc1524.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rfc1524.c b/rfc1524.c
+index 2a9e3afd..e7755035 100644
+--- a/rfc1524.c
++++ b/rfc1524.c
+@@ -104,7 +104,7 @@ int rfc1524_expand_command (BODY *a, const char *filename, const char *_type,
+ 
+         /* In send mode, use the current charset, since the message hasn't
+          * been converted yet. */
+-        if ((ascii_strcasecmp (param, "charset") == 0) && a->charset)
++        if ((ascii_strcasecmp (param, "charset") == 0) && a->charset && !a->noconv)
+           _pvalue = a->charset;
+         else
+           _pvalue = mutt_get_parameter (param, a->parameter);

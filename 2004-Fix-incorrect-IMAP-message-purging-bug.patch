@@ -1,0 +1,62 @@
+From fedb91e221894c19f65976cf35b5bccea0b326be Mon Sep 17 00:00:00 2001
+From: Kevin McCarthy <kevin@8t8.us>
+Date: Wed, 13 Mar 2019 12:06:11 +0800
+Subject: [PATCH] Fix incorrect IMAP message purging bug.
+
+Thanks to Ivan Middleton @imiddle for the awesome bug report and
+suggested fix.
+
+The bug is most easily generated using Gmail with the $trash variable
+set.
+
+Deleted messages are first copied to the $trash folder.  If this is
+set to "[Gmail]/Trash", then Gmail inteprets the copy as a "delete"
+and sends EXPUNGE messages back for the messages.
+
+cmd_parse_expunge() and cmd_parse_vanished() set the hdr->index to
+INT_MAX, which subsequently an imap_expunge_mailbox() will use to
+remove the messages from the local mailbox.
+
+If we close the mailbox instead of sync it, Mutt will end up executing
+the 'Deleted' flag setting before processing the expunge (because
+"imap_check_mailbox() -> imap_cmd_finish()' doesn't set check_status
+when we are closing).  The expunged messages will then be included in
+the set of 'Deleted' flags.
+
+Unfortunately, because the messages are sorted by *index* before
+msgset generation, an incorrect range of UIDs will be sent, which
+could easily include messages that should not be deleted.
+
+This fix is a minimal fix for a stable bug fix  excluding
+messages with the index set to INT_MAX from all msg sets.  Other
+things that should be investigated in master are:
+
+- sorting by UID instead of index before msgset generation
+- unsetting the 'active' flag in cmd_parse_expunge() and
+  cmd_parse_vanished() instead of waiting until imap_expunge_mailbox()
+  to do so.
+---
+ imap/imap.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/imap/imap.c b/imap/imap.c
+index 696689ba..ef7ce8c4 100644
+--- a/imap/imap.c
++++ b/imap/imap.c
+@@ -973,8 +973,11 @@ static int imap_make_msg_set (IMAP_DATA* idata, BUFFER* buf, int flag,
+        n++)
+   {
+     match = 0;
+-    /* don't include pending expunged messages */
+-    if (hdrs[n]->active)
++    /* don't include pending expunged messages.
++     *
++     * TODO: can we unset active in cmd_parse_expunge() and
++     * cmd_parse_vanished() instead of checking for index != INT_MAX. */
++    if (hdrs[n]->active && (hdrs[n]->index != INT_MAX))
+       switch (flag)
+       {
+         case MUTT_DELETED:
+-- 
+2.20.1
+
