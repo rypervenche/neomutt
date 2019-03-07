@@ -4884,6 +4884,7 @@ const struct Command Commands[] = {
   { "unalternative_order", parse_unstailq,         UL &AlternativeOrderList },
   { "unattachments",       parse_unattachments,    0 },
   { "unauto_view",         parse_unstailq,         UL &AutoViewList },
+  { "unbind",              mutt_parse_unbind,      0 },
 #ifdef HAVE_COLOR
   { "uncolor",             mutt_parse_uncolor,     0 },
 #endif

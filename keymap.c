@@ -1115,7 +1115,7 @@ enum CommandResult mutt_parse_push(struct Buffer *buf, struct Buffer *s,
  * @note Caller needs to free the returned string
  */
 static char *parse_keymap(int *menu, struct Buffer *s, int maxmenus,
-                          int *nummenus, struct Buffer *err, bool bind)
+                          int *nummenus, struct Buffer *err, char *cmd)
 {
   struct Buffer buf;
   int i = 0;
@@ -1152,14 +1152,14 @@ static char *parse_keymap(int *menu, struct Buffer *s, int maxmenus,
 
     if (buf.data[0] == '\0')
     {
-      mutt_buffer_printf(err, _("%s: null key sequence"), bind ? "bind" : "macro");
+      mutt_buffer_printf(err, _("%s: null key sequence"), cmd);
     }
     else if (MoreArgs(s))
       return buf.data;
   }
   else
   {
-    mutt_buffer_printf(err, _("%s: too few arguments"), bind ? "bind" : "macro");
+    mutt_buffer_printf(err, _("%s: too few arguments"), cmd);
   }
 error:
   FREE(&buf.data);
@@ -1252,7 +1252,7 @@ enum CommandResult mutt_parse_bind(struct Buffer *buf, struct Buffer *s,
   int menu[sizeof(Menus) / sizeof(struct Mapping) - 1], nummenus;
   enum CommandResult rc = MUTT_CMD_SUCCESS;
 
-  char *key = parse_keymap(menu, s, mutt_array_size(menu), &nummenus, err, true);
+  char *key = parse_keymap(menu, s, mutt_array_size(menu), &nummenus, err, "bind");
   if (!key)
     return MUTT_CMD_ERROR;
 
@@ -1299,6 +1299,66 @@ enum CommandResult mutt_parse_bind(struct Buffer *buf, struct Buffer *s,
 }
 
 /**
+ * mutt_parse_unbind - Parse the 'unbind' command - Implements ::command_t
+ * @param buf
+ * @param s
+ * @param data
+ * @param err
+ *
+ * @return r
+ *
+ * Command unbinds specific binging in menu-name, in all menu-names
+ * or all bindings in all menu-names.
+ * unbind <menu-name[,…]|*> [<key_sequence>]
+ */
+enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
+                                     unsigned long data, struct Buffer *err)
+{
+  const struct Binding *bindings = NULL;
+  int menu[sizeof(Menus) / sizeof(struct Mapping) - 1], nummenus;
+  enum CommandResult r = MUTT_CMD_SUCCESS;
+
+  char *key = parse_keymap(menu, s, mutt_array_size(menu), &nummenus, err, "unbind");
+
+  // keep q and : bind
+  if (mutt_str_strcmp(key, "q") == 0 || mutt_str_strcmp(key, ":") == 0)
+    return true;
+  /* function to execute */
+  mutt_extract_token(buf, s, 0);
+  mutt_debug(1, "key: '%s'\n", key);
+
+  if (MoreArgs(s))
+  {
+    mutt_buffer_printf(err, _("%s: too many arguments"), "unbind");
+    r = MUTT_CMD_ERROR;
+  }
+  else
+  {
+    for (int i = 0; i < nummenus; ++i)
+    {
+      /* The pager and editor menus don't use the generic map,
+       * however for other menus try generic first. */
+      if ((menu[i] != MENU_PAGER) && (menu[i] != MENU_EDITOR) && (menu[i] != MENU_GENERIC))
+      {
+        r = km_bindkey(key, menu[i], OP_NULL); /* the 'unbind' command */
+        if (r == 0)
+          mutt_debug(1, "key '%s' unbound\n", key);
+        continue;
+        if (r == -2)
+          break;
+      }
+
+      bindings = km_get_table(menu[i]);
+      if (bindings)
+        r = km_bindkey(key, menu[i], OP_NULL); /* the 'unbind' command */
+      mutt_debug(1, "key '%s' unbound2\n", key);
+    }
+  }
+  FREE(&key);
+  return r;
+}
+
+/**
  * mutt_parse_macro - Parse the 'macro' command - Implements ::command_t
  *
  * macro `<menu>` `<key>` `<macro>` `<description>`
@@ -1310,7 +1370,7 @@ enum CommandResult mutt_parse_macro(struct Buffer *buf, struct Buffer *s,
   enum CommandResult rc = MUTT_CMD_ERROR;
   char *seq = NULL;
 
-  char *key = parse_keymap(menu, s, mutt_array_size(menu), &nummenus, err, false);
+  char *key = parse_keymap(menu, s, mutt_array_size(menu), &nummenus, err, "macro");
   if (!key)
     return MUTT_CMD_ERROR;
 
