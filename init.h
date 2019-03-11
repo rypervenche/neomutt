@@ -4893,6 +4893,7 @@ const struct Command Commands[] = {
   { "unhook",              mutt_parse_unhook,      0 },
   { "unignore",            parse_unignore,         0 },
   { "unlists",             parse_unlists,          0 },
+  { "unmacro",             mutt_parse_unbind,      0 },
   { "unmailboxes",         parse_unmailboxes,      0 },
   { "unmailto_allow",      parse_unstailq,         UL &MailToAllow },
   { "unmime_lookup",       parse_unstailq,         UL &MimeLookupList },

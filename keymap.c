@@ -1364,11 +1364,10 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
   if (MoreArgs(s)) // second arg - key
   {
     mutt_extract_token(buf, s, 0);
-    if (mutt_str_strcmp(buf->data, "*") == 0) //when key sequence is all keys
-      all_keys = true;
-    else //when key sequence is a specific key
-      key = buf->data;
+    key = buf->data;
   }
+  else
+    all_keys = true;
 
   if ((all_menus && mutt_str_strcmp(key, "q") == 0) ||
       (all_menus && mutt_str_strcmp(key, ":") == 0))
@@ -1379,16 +1378,20 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
 
   if (MoreArgs(s))
   {
-    mutt_buffer_printf(err, _("%s: too many arguments"), "bind");
+    mutt_buffer_printf(err, _("%s: too many arguments"), "unbind");
     return MUTT_CMD_ERROR;
   }
   else // Here comes the logic, Mr. Tuvok.
   {
-    if (all_menus == true) // unbind key from all menus
+    if (all_menus == true && all_keys == true)
+      mutt_debug(1, "all menus all keys\n");
+    else if (all_menus == true && all_keys == false)
     {
       for (int i = 0; i < MENU_MAX; ++i)
         km_bindkey(key, i, OP_NULL);
     }
+    else if (all_menus == false && all_keys == true)
+      mutt_debug(1, "specified menus all keys\n");
     else // unbind key from specified menus
     {
       for (int i = 0; i < nummenus; ++i)
