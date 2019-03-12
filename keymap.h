@@ -22,11 +22,12 @@
 
 #ifndef MUTT_KEYMAP_H
 #define MUTT_KEYMAP_H
-
 #include <stddef.h>
 #include "mutt/mutt.h"
 #include "mutt_commands.h"
 
+#define MUTT_UNBIND  1<<0
+#define MUTT_UNMACRO 1<<1
 /* maximal length of a key binding sequence used for buffer in km_bindkey */
 #define MAX_SEQ 8
 

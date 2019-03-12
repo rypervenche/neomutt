@@ -1334,6 +1334,54 @@ static void *parse_menu(int *menu, char *s, int maxmenus, int *nummenus,
 }
 
 /**
+ * km_unbind_all - free all keys in Keymap from arg
+ * @param Keymap
+ * @param data
+ *
+ * Function iterate through Keymap and frees keys
+ * defined either by macro or bind
+ */
+static void km_unbind_all(struct Keymap **map, unsigned long mode)
+{
+  struct Keymap *cur, *next, *first, *last;
+
+  first = last = NULL;
+  cur = *map;
+
+  while (cur != NULL)
+  {
+    next = cur->next;
+    if ((mode & MUTT_UNBIND && cur->macro == NULL) ||
+        (mode & MUTT_UNMACRO && cur->macro != NULL))
+    {
+      FREE(&cur->macro);
+      FREE(&cur->keys);
+      FREE(&cur->desc);
+      FREE(&cur);
+    }
+    else if (first == NULL)
+    {
+      first = last = cur;
+    }
+    else if (last != NULL)
+    {
+      last->next = cur;
+      last = cur;
+    }
+    else
+    {
+      last = cur;
+    }
+    cur = next;
+  }
+
+  if (last != NULL)
+    last->next = NULL;
+
+  *map = first;
+}
+
+/**
  * mutt_parse_unbind - Parse the 'unbind' command - Implements ::command_t
  * @param buf
  * @param s
@@ -1349,17 +1397,19 @@ static void *parse_menu(int *menu, char *s, int maxmenus, int *nummenus,
 enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
                                      unsigned long data, struct Buffer *err)
 {
-  const struct Binding *bindings = NULL;
   int menu[sizeof(Menus) / sizeof(struct Mapping) - 1], nummenus;
   enum CommandResult r = MUTT_CMD_SUCCESS;
   bool all_menus = false, all_keys = false;
   char *key = NULL;
+  char *cmd = "unbind";
+  if ((data & MUTT_UNMACRO) == MUTT_UNMACRO)
+    cmd = "unmacro";
 
   mutt_extract_token(buf, s, 0);
   if (mutt_str_strcmp(buf->data, "*") == 0) //when menu-names is * (all)
     all_menus = true;
   else // when menu-names is comma separated list
-    parse_menu(menu, buf->data, mutt_array_size(menu), &nummenus, err, "unbind");
+    parse_menu(menu, buf->data, mutt_array_size(menu), &nummenus, err, cmd);
 
   if (MoreArgs(s)) // second arg - key
   {
@@ -1372,41 +1422,56 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
   if ((all_menus && mutt_str_strcmp(key, "q") == 0) ||
       (all_menus && mutt_str_strcmp(key, ":") == 0))
   {
-    mutt_buffer_printf(err, _("%s: cannot unbind '%s' from all menus"), "unbind", key);
+    mutt_buffer_printf(err, _("%s: cannot unbind '%s' from all menus"), cmd, key);
     return MUTT_CMD_ERROR;
   }
 
   if (MoreArgs(s))
   {
-    mutt_buffer_printf(err, _("%s: too many arguments"), "unbind");
+    mutt_buffer_printf(err, _("%s: too many arguments"), cmd);
     return MUTT_CMD_ERROR;
   }
   else // Here comes the logic, Mr. Tuvok.
   {
     if (all_menus == true && all_keys == true)
-      mutt_debug(1, "all menus all keys\n");
+    {
+      for (int i = 0; i < MENU_MAX; ++i)
+      {
+        km_unbind_all(&Keymaps[i],data);
+        if ((data & MUTT_UNBIND) == MUTT_UNBIND & i == MENU_GENERIC)
+        {
+          km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+          km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+          km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
+          km_bindkey("q", MENU_GENERIC, OP_QUIT);
+          km_bindkey("?", MENU_GENERIC, OP_HELP);
+        }
+      }
+    }
+    else if (all_menus == false && all_keys == true)
+    {
+      for (int i = 0; i < nummenus; ++i)
+      {
+        km_unbind_all(&Keymaps[menu[i]],data);
+        if ((data & MUTT_UNBIND) == MUTT_UNBIND & i == MENU_GENERIC)
+        {
+          km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+          km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+          km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
+          km_bindkey("q", MENU_GENERIC, OP_QUIT);
+          km_bindkey("?", MENU_GENERIC, OP_HELP);
+        }
+      }
+    }
     else if (all_menus == true && all_keys == false)
     {
       for (int i = 0; i < MENU_MAX; ++i)
         km_bindkey(key, i, OP_NULL);
     }
-    else if (all_menus == false && all_keys == true)
-      mutt_debug(1, "specified menus all keys\n");
     else // unbind key from specified menus
     {
       for (int i = 0; i < nummenus; ++i)
-      {
-        if ((menu[i] == MENU_PAGER) && (menu[i] != MENU_EDITOR) && (menu[i] != MENU_GENERIC))
-        {
-          km_bindkey(key, menu[i], OP_NULL);
-        }
-        else
-        {
-          bindings = km_get_table(menu[i]);
-          if (bindings)
-            km_bindkey(key, menu[i], OP_NULL);
-        }
-      }
+        km_bindkey(key, menu[i], OP_NULL);
     }
   }
 
