@@ -1438,7 +1438,7 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
       for (int i = 0; i < MENU_MAX; ++i)
       {
         km_unbind_all(&Keymaps[i],data);
-        if ((data & MUTT_UNBIND) == MUTT_UNBIND & i == MENU_GENERIC)
+        if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
         {
           km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
           km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
@@ -1453,7 +1453,7 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
       for (int i = 0; i < nummenus; ++i)
       {
         km_unbind_all(&Keymaps[menu[i]],data);
-        if ((data & MUTT_UNBIND) == MUTT_UNBIND & i == MENU_GENERIC)
+        if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
         {
           km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
           km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);

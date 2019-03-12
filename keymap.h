@@ -22,6 +22,7 @@
 
 #ifndef MUTT_KEYMAP_H
 #define MUTT_KEYMAP_H
+
 #include <stddef.h>
 #include "mutt/mutt.h"
 #include "mutt_commands.h"
