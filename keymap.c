@@ -1351,8 +1351,8 @@ static void km_unbind_all(struct Keymap **map, unsigned long mode)
   while (cur != NULL)
   {
     next = cur->next;
-    if ((mode & MUTT_UNBIND && cur->macro == NULL) ||
-        (mode & MUTT_UNMACRO && cur->macro != NULL))
+    if (((mode & MUTT_UNBIND) && (cur->macro == NULL)) ||
+        ((mode & MUTT_UNMACRO) && (cur->macro != NULL)))
     {
       FREE(&cur->macro);
       FREE(&cur->keys);
@@ -1433,45 +1433,32 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
   }
   else // Here comes the logic, Mr. Tuvok.
   {
-    if (all_menus == true && all_keys == true)
+    if (all_keys)
     {
-      for (int i = 0; i < MENU_MAX; ++i)
+      int menus = all_menus ? MENU_MAX : nummenus;
+
+      for (int i = 0; i < menus; ++i)
       {
-        km_unbind_all(&Keymaps[i],data);
+        int map = all_menus ? i : menu[i];
+        km_unbind_all(&Keymaps[map],data);
         if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
         {
           km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
           km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
           km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
-          km_bindkey("q", MENU_GENERIC, OP_QUIT);
+          km_bindkey("q", MENU_GENERIC, OP_EXIT);
+          km_bindkey("q", MENU_PAGER, OP_EXIT);
           km_bindkey("?", MENU_GENERIC, OP_HELP);
         }
       }
     }
-    else if (all_menus == false && all_keys == true)
+    else
     {
-      for (int i = 0; i < nummenus; ++i)
-      {
-        km_unbind_all(&Keymaps[menu[i]],data);
-        if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
-        {
-          km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
-          km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
-          km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
-          km_bindkey("q", MENU_GENERIC, OP_QUIT);
-          km_bindkey("?", MENU_GENERIC, OP_HELP);
-        }
+      int menus = all_menus ? MENU_MAX : nummenus;
+      for (int i = 0; i < menus; ++i) {
+        int target_menu = all_menus ? i : menu[i];
+        km_bindkey(key, target_menu, OP_NULL);
       }
-    }
-    else if (all_menus == true && all_keys == false)
-    {
-      for (int i = 0; i < MENU_MAX; ++i)
-        km_bindkey(key, i, OP_NULL);
-    }
-    else // unbind key from specified menus
-    {
-      for (int i = 0; i < nummenus; ++i)
-        km_bindkey(key, menu[i], OP_NULL);
     }
   }
 
