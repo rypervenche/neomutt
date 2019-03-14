@@ -1398,7 +1398,6 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
                                      unsigned long data, struct Buffer *err)
 {
   int menu[sizeof(Menus) / sizeof(struct Mapping) - 1], nummenus;
-  enum CommandResult r = MUTT_CMD_SUCCESS;
   bool all_menus = false, all_keys = false;
   char *key = NULL;
   char *cmd = "unbind";
@@ -1406,12 +1405,12 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
     cmd = "unmacro";
 
   mutt_extract_token(buf, s, 0);
-  if (mutt_str_strcmp(buf->data, "*") == 0) //when menu-names is * (all)
+  if (mutt_str_strcmp(buf->data, "*") == 0)
     all_menus = true;
-  else // when menu-names is comma separated list
+  else
     parse_menu(menu, buf->data, mutt_array_size(menu), &nummenus, err, cmd);
 
-  if (MoreArgs(s)) // second arg - key
+  if (MoreArgs(s))
   {
     mutt_extract_token(buf, s, 0);
     key = buf->data;
@@ -1431,38 +1430,32 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
     mutt_buffer_printf(err, _("%s: too many arguments"), cmd);
     return MUTT_CMD_ERROR;
   }
-  else // Here comes the logic, Mr. Tuvok.
+
+  int menus = all_menus ? MENU_MAX : nummenus;
+
+  for (int i = 0; i < menus; ++i)
   {
+    int map = all_menus ? i : menu[i];
     if (all_keys)
     {
-      int menus = all_menus ? MENU_MAX : nummenus;
-
-      for (int i = 0; i < menus; ++i)
+      km_unbind_all(&Keymaps[map],data);
+      if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
       {
-        int map = all_menus ? i : menu[i];
-        km_unbind_all(&Keymaps[map],data);
-        if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
-        {
-          km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
-          km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
-          km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
-          km_bindkey("q", MENU_GENERIC, OP_EXIT);
-          km_bindkey("q", MENU_PAGER, OP_EXIT);
-          km_bindkey("?", MENU_GENERIC, OP_HELP);
-        }
+        km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+        km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+        km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
+        km_bindkey("q", MENU_GENERIC, OP_EXIT);
+        km_bindkey("q", MENU_PAGER, OP_EXIT);
+        km_bindkey("?", MENU_GENERIC, OP_HELP);
       }
     }
     else
     {
-      int menus = all_menus ? MENU_MAX : nummenus;
-      for (int i = 0; i < menus; ++i) {
-        int target_menu = all_menus ? i : menu[i];
-        km_bindkey(key, target_menu, OP_NULL);
-      }
+      km_bindkey(key, map, OP_NULL);
     }
   }
 
-  return r;
+  return MUTT_CMD_SUCCESS;
 }
 
 /**
