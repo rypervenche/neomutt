@@ -1302,34 +1302,32 @@ enum CommandResult mutt_parse_bind(struct Buffer *buf, struct Buffer *s,
  * parse_menu - Parse a menu-names into array
  * @param menu     Array for results
  * @param s        string containing menu-names string
- * @param maxmenus Total number of menus
- * @param nummenus Number of menus this config applies to
  * @param err      Buffer for error messages
- * @param bind     If true 'bind', otherwise 'macro'
  *
  * Expects to see: <menu-string>[,<menu-string>]
  */
-static void *parse_menu(int *menu, char *s, int maxmenus, int *nummenus,
-                        struct Buffer *err, char *cmd)
+static void *parse_menu(int *menu, char *s, struct Buffer *err)
 {
-  int i = 0;
-  char *q = NULL;
+  char *menu_names_dup = mutt_str_strdup(s);
+  char *menu_name = strsep(&menu_names_dup, ",");
 
-  /* menu name */
-  while (i < maxmenus)
+  while (menu_name)
   {
-    q = strchr(s, ',');
-    if (q)
-      *q = '\0';
+    int value = mutt_map_get_value(menu_name, Menus);
+    if (value == -1)
+    {
+      mutt_buffer_printf(err, _("%s: no such menu"), menu_name);
+      FREE(&menu_names_dup);
+      return NULL; // this is just a placeholder.
+    }
+    else
+      menu[value] = true;
 
-    menu[i] = mutt_map_get_value(s, Menus);
-    if (menu[i] == -1)
-      mutt_buffer_printf(err, _("%s: no such menu"), s);
-    i++;
-    if (q)
-      s = q + 1;
+    menu_name = strsep(&menu_names_dup, ","); 
   }
-  *nummenus = i;
+
+  FREE(&menu_names_dup);
+
   return NULL;
 }
 
@@ -1397,18 +1395,20 @@ static void km_unbind_all(struct Keymap **map, unsigned long mode)
 enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
                                      unsigned long data, struct Buffer *err)
 {
-  int menu[sizeof(Menus) / sizeof(struct Mapping) - 1], nummenus;
-  bool all_menus = false, all_keys = false;
+  int menu[MENU_MAX] = {0};
+  bool all_keys = false;
   char *key = NULL;
   char *cmd = "unbind";
+
   if ((data & MUTT_UNMACRO) == MUTT_UNMACRO)
     cmd = "unmacro";
 
   mutt_extract_token(buf, s, 0);
   if (mutt_str_strcmp(buf->data, "*") == 0)
-    all_menus = true;
+    for(int i = 0; i < MENU_MAX; i++)
+      menu[i] = 1;
   else
-    parse_menu(menu, buf->data, mutt_array_size(menu), &nummenus, err, cmd);
+    parse_menu(menu, buf->data, err);
 
   if (MoreArgs(s))
   {
@@ -1418,12 +1418,14 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
   else
     all_keys = true;
 
-  if ((all_menus && mutt_str_strcmp(key, "q") == 0) ||
-      (all_menus && mutt_str_strcmp(key, ":") == 0))
-  {
-    mutt_buffer_printf(err, _("%s: cannot unbind '%s' from all menus"), cmd, key);
-    return MUTT_CMD_ERROR;
-  }
+  // I'm do not know what exaclty to do with this since all_keys disappeared
+  // in favor of int menu[MENU_MAX].
+  //if ((all_menus && mutt_str_strcmp(key, "q") == 0) ||
+  //    (all_menus && mutt_str_strcmp(key, ":") == 0))
+  //{
+  //  mutt_buffer_printf(err, _("%s: cannot unbind '%s' from all menus"), cmd, key);
+  //  return MUTT_CMD_ERROR;
+  //}
 
   if (MoreArgs(s))
   {
@@ -1431,14 +1433,14 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
     return MUTT_CMD_ERROR;
   }
 
-  int menus = all_menus ? MENU_MAX : nummenus;
-
-  for (int i = 0; i < menus; ++i)
+  for (int i = 0; i < MENU_MAX; ++i)
   {
-    int map = all_menus ? i : menu[i];
+    if (menu[i] != 1)
+      continue;
+
     if (all_keys)
     {
-      km_unbind_all(&Keymaps[map],data);
+      km_unbind_all(&Keymaps[i],data);
       if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
       {
         km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
@@ -1450,9 +1452,7 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
       }
     }
     else
-    {
-      km_bindkey(key, map, OP_NULL);
-    }
+      km_bindkey(key, i, OP_NULL);
   }
 
   return MUTT_CMD_SUCCESS;
