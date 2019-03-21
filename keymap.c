@@ -573,7 +573,7 @@ int km_dokey(int menu)
   int pos = 0;
   int n = 0;
 
-  if (!map)
+  if (!map && (menu != MENU_EDITOR))
     return retry_generic(menu, NULL, 0, 0);
 
   while (true)
@@ -666,6 +666,9 @@ int km_dokey(int menu)
       if (func)
         continue;
     }
+
+    if (!map)
+      return tmp.op;
 
     /* Nope. Business as usual */
     while (LastKey > map->keys[pos])
@@ -1418,7 +1421,7 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
   else
     all_keys = true;
 
-  // I'm do not know what exaclty to do with this since all_keys disappeared
+  // I do not know what exaclty to do with this - since all_keys disappeared
   // in favor of int menu[MENU_MAX].
   //if ((all_menus && mutt_str_strcmp(key, "q") == 0) ||
   //    (all_menus && mutt_str_strcmp(key, ":") == 0))
@@ -1437,19 +1440,19 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
   {
     if (menu[i] != 1)
       continue;
-
     if (all_keys)
     {
       km_unbind_all(&Keymaps[i],data);
-      if ((data & MUTT_UNBIND) == MUTT_UNBIND && i == MENU_GENERIC)
-      {
-        km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
-        km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
-        km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
-        km_bindkey("q", MENU_GENERIC, OP_EXIT);
-        km_bindkey("q", MENU_PAGER, OP_EXIT);
-        km_bindkey("?", MENU_GENERIC, OP_HELP);
-      }
+      km_bindkey("<enter>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+      km_bindkey("<return>", MENU_GENERIC, OP_GENERIC_SELECT_ENTRY);
+      km_bindkey("<enter>", MENU_MAIN, OP_DISPLAY_MESSAGE);
+      km_bindkey("<return>", MENU_MAIN, OP_DISPLAY_MESSAGE);
+      km_bindkey("<backspace>", MENU_EDITOR, OP_EDITOR_BACKSPACE);
+      km_bindkey("\177", MENU_EDITOR, OP_EDITOR_BACKSPACE);
+      km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
+      km_bindkey(":", MENU_PAGER, OP_ENTER_COMMAND);
+      km_bindkey("?", i, OP_HELP); //
+      km_bindkey("q", i, OP_EXIT);
     }
     else
       km_bindkey(key, i, OP_NULL);
