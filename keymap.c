@@ -1451,8 +1451,11 @@ enum CommandResult mutt_parse_unbind(struct Buffer *buf, struct Buffer *s,
       km_bindkey("\177", MENU_EDITOR, OP_EDITOR_BACKSPACE);
       km_bindkey(":", MENU_GENERIC, OP_ENTER_COMMAND);
       km_bindkey(":", MENU_PAGER, OP_ENTER_COMMAND);
-      km_bindkey("?", i, OP_HELP); //
-      km_bindkey("q", i, OP_EXIT);
+      if (i != MENU_EDITOR)
+      {
+        km_bindkey("?", i, OP_HELP); //
+        km_bindkey("q", i, OP_EXIT);
+      }
     }
     else
       km_bindkey(key, i, OP_NULL);
